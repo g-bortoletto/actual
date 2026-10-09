@@ -1,0 +1,70 @@
+name: Build Fork Docker Image
+
+# Builds the sync-server image from this fork and publishes it to the fork's
+# GitHub Container Registry (ghcr.io/<owner>/actual-server).
+#
+# Why this exists: upstream's docker-nightly.yml skips forks on push and its
+# jobs require Depot runners configured for the upstream org, so the fork
+# cannot use it. This workflow runs on GitHub-hosted runners and needs no
+# credentials beyond the automatic GITHUB_TOKEN (packages: write).
+#
+# Usage:
+#   gh workflow run docker-publish-fork.yml --ref master -f tag=26.10.0-pluggy.1
+#
+# The image is always also tagged sha-<commit>.
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Image tag to publish (a sha-<commit> tag is always added)'
+        required: true
+        default: '26.10.0-pluggy.1'
+
+concurrency:
+  group: docker-fork-build
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build:
+    name: Build and push image
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4.0.0
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up environment
+        uses: ./.github/actions/setup
+        with:
+          # Avoid restoring potentially poisoned caches in image builds.
+          cache: 'false'
+
+      - name: Build server
+        run: yarn build:server
+
+      - name: Build and push image
+        uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f # v7.1.0
+        with:
+          context: .
+          push: true
+          file: packages/sync-server/docker/alpine.Dockerfile
+          platforms: linux/amd64
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/actual-server:${{ inputs.tag }}
+            ghcr.io/${{ github.repository_owner }}/actual-server:sha-${{ github.sha }}
