@@ -17,6 +17,7 @@ import { AccountGroupsModal } from './modals/AccountGroupsModal';
 import { AccountMenuModal } from './modals/AccountMenuModal';
 import { AccountReconcileModal } from './modals/AccountReconcileModal';
 import { AkahuInitialiseModal } from './modals/AkahuInitialiseModal';
+import { BankSyncReviewModal } from './modals/BankSyncReviewModal';
 import { BudgetAutomationsModal } from './modals/BudgetAutomationsModal';
 import { BudgetPageMenuModal } from './modals/BudgetPageMenuModal';
 import { CategoryAutocompleteModal } from './modals/CategoryAutocompleteModal';
@@ -288,6 +289,9 @@ export function Modals() {
 
         case 'account-reconcile':
           return <AccountReconcileModal key={key} {...modal.options} />;
+
+        case 'bank-sync-review':
+          return <BankSyncReviewModal key={key} {...modal.options} />;
 
         case 'category-menu':
           return <CategoryMenuModal key={key} {...modal.options} />;

@@ -19,6 +19,7 @@ import { v4 as uuidv4 } from 'uuid';
 
 import { sync } from '#app/appSlice';
 import { useAccounts } from '#hooks/useAccounts';
+import { pushModal } from '#modals/modalsSlice';
 import { addNotification } from '#notifications/notificationsSlice';
 import { payeeQueries } from '#payees';
 import { useDispatch, useStore } from '#redux';
@@ -656,6 +657,8 @@ export function useSyncAccountsMutation() {
       const newTransactions: Array<TransactionEntity['id']> = [];
       const matchedTransactions: Array<TransactionEntity['id']> = [];
       const updatedAccounts: Array<AccountEntity['id']> = [];
+      let reviewPendingCount = 0;
+      let reviewPendingAccountId: AccountEntity['id'] | undefined;
 
       if (simpleFinAccounts.length > 0) {
         console.log('Using SimpleFin batch sync');
@@ -705,6 +708,13 @@ export function useSyncAccountsMutation() {
 
         if (success) isSyncSuccess = true;
 
+        // Held observations that still need a user decision: the account is
+        // knowingly incomplete until they are resolved.
+        if ((res.reviewPendingCount ?? 0) > 0) {
+          reviewPendingCount += res.reviewPendingCount ?? 0;
+          reviewPendingAccountId ??= accountId;
+        }
+
         // Dispatch the ids for the accounts that are yet to be synced
         dispatch(setAccountsSyncing({ ids: accountIdsToSync.slice(idx + 1) }));
       }
@@ -716,6 +726,36 @@ export function useSyncAccountsMutation() {
           matchedTransactions,
         }),
       );
+
+      if (reviewPendingCount > 0) {
+        dispatch(
+          addNotification({
+            notification: {
+              type: 'warning',
+              message: t(
+                'Bank sync finished, but {{count}} item(s) need review before they can be added to your ledger.',
+                { count: reviewPendingCount },
+              ),
+              button: {
+                title: t('Review'),
+                action: () => {
+                  dispatch(
+                    pushModal({
+                      modal: {
+                        name: 'bank-sync-review',
+                        options:
+                          reviewPendingAccountId != null
+                            ? { accountId: reviewPendingAccountId }
+                            : {},
+                      },
+                    }),
+                  );
+                },
+              },
+            },
+          }),
+        );
+      }
 
       dispatch(markUpdatedAccounts({ ids: updatedAccounts }));
 

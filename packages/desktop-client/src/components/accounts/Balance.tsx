@@ -14,6 +14,7 @@ import { isPreviewId } from '@actual-app/core/shared/transactions';
 import type { AccountEntity } from '@actual-app/core/types/models';
 import { useHover } from 'usehooks-ts';
 
+import { SyncReviewBadge } from '#components/banksync/SyncReviewBadge';
 import { FinancialText } from '#components/FinancialText';
 import { PrivacyFilter } from '#components/PrivacyFilter';
 import { CellValue, CellValueText } from '#components/spreadsheet/CellValue';
@@ -257,6 +258,8 @@ export function Balances({
           }}
         />
       </Button>
+
+      {account != null && <SyncReviewBadge accountId={account.id} />}
 
       {showExtraBalances && <MoreBalances balanceQuery={balanceQuery} />}
 

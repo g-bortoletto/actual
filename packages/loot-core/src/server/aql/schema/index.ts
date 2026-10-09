@@ -86,6 +86,41 @@ export const schema = {
     sort_order: f('float'),
     tombstone: f('boolean'),
   },
+  // Observations held for review before they can reach the ledger. The
+  // evidence and observation ids are stored as JSON strings and parsed by the
+  // client (see desktop-client's banksync/reviewUtils).
+  bank_sync_review_items: {
+    id: f('id'),
+    account_id: f('id', { ref: 'accounts' }),
+    kind: f('string'),
+    state: f('string'),
+    observation_ids: f('string'),
+    evidence: f('string'),
+    created_at: f('string'),
+    updated_at: f('string'),
+    tombstone: f('boolean'),
+  },
+  bank_sync_decisions: {
+    id: f('id'),
+    review_item_id: f('id'),
+    action: f('string'),
+    observation_ids: f('string'),
+    decided_at: f('string'),
+    applied_at: f('string'),
+    tombstone: f('boolean'),
+  },
+  bank_sync_event_mappings: {
+    id: f('id'),
+    review_item_id: f('id'),
+    account_id: f('id', { ref: 'accounts' }),
+    representative_observation_id: f('string'),
+    alias_observation_ids: f('string'),
+    actual_transaction_ids: f('string'),
+    decision: f('string'),
+    created_at: f('string'),
+    applied_at: f('string'),
+    tombstone: f('boolean'),
+  },
   categories: {
     id: f('id'),
     name: f('string'),

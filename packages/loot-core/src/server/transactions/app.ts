@@ -15,6 +15,7 @@ import type {
 import { exportQueryToCSV, exportToCSV } from './export/export-to-csv';
 import { parseFile } from './import/parse-file';
 import type { ParseFileOptions } from './import/parse-file';
+import { linkTransfer } from './link-transfer';
 import { mergeTransactions } from './merge';
 
 import { batchUpdateTransactions } from '.';
@@ -29,6 +30,7 @@ export type TransactionHandlers = {
   'transactions-export': typeof exportTransactions;
   'transactions-export-query': typeof exportTransactionsQuery;
   'transactions-merge': typeof mergeTransactions;
+  'transactions-link-transfer': typeof linkTransfer;
   'get-earliest-transaction': typeof getEarliestTransaction;
   'get-latest-transaction': typeof getLatestTransaction;
 };
@@ -157,6 +159,7 @@ app.method(
   mutator(undoable(handleBatchUpdateTransactions)),
 );
 app.method('transactions-merge', mutator(undoable(mergeTransactions)));
+app.method('transactions-link-transfer', mutator(undoable(linkTransfer)));
 
 app.method('transaction-add', mutator(addTransaction));
 app.method('transaction-update', mutator(updateTransaction));

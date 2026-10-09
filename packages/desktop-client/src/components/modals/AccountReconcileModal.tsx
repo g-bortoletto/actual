@@ -6,6 +6,7 @@ import { styles } from '@actual-app/components/styles';
 import { Text } from '@actual-app/components/text';
 import { theme } from '@actual-app/components/theme';
 import { View } from '@actual-app/components/view';
+import { q } from '@actual-app/core/shared/query';
 import {
   amountToInteger,
   integerToAmount,
@@ -13,6 +14,7 @@ import {
 } from '@actual-app/core/shared/util';
 import { format as formatDate } from 'date-fns';
 
+import { isPendingReviewState } from '#components/banksync/reviewUtils';
 import { Modal, ModalCloseButton, ModalHeader } from '#components/common/Modal';
 import { FinancialText } from '#components/FinancialText';
 import { FieldLabel } from '#components/mobile/MobileForms';
@@ -24,6 +26,9 @@ import { useFormat } from '#hooks/useFormat';
 import { useLocale } from '#hooks/useLocale';
 import { useSheetValue } from '#hooks/useSheetValue';
 import type { Modal as ModalType } from '#modals/modalsSlice';
+import { pushModal } from '#modals/modalsSlice';
+import { liveQuery } from '#queries/liveQuery';
+import { useDispatch } from '#redux';
 import * as bindings from '#spreadsheet/bindings';
 
 type AccountReconcileModalProps = Extract<
@@ -47,6 +52,28 @@ export function AccountReconcileModal({
 
   const [amount, setAmount] = useState<number | null>(null);
   const [amountInputKey, setAmountInputKey] = useState(0);
+  const [pendingReviewCount, setPendingReviewCount] = useState(0);
+
+  const dispatch = useDispatch();
+
+  useEffect(() => {
+    const query = q('bank_sync_review_items')
+      .filter({ account_id: accountId })
+      .select(['id', 'state']);
+
+    const live = liveQuery<{ id: string; state: string | null }>(query, {
+      onData: rows => {
+        setPendingReviewCount(
+          rows.filter(row => isPendingReviewState(row.state)).length,
+        );
+      },
+      onError: () => setPendingReviewCount(0),
+    });
+
+    return () => {
+      live?.unsubscribe();
+    };
+  }, [accountId]);
 
   useEffect(() => {
     if (amount == null && clearedBalance != null) {
@@ -80,6 +107,43 @@ export function AccountReconcileModal({
             title={t('Reconcile')}
             rightContent={<ModalCloseButton onPress={() => state.close()} />}
           />
+          {pendingReviewCount > 0 && (
+            <View
+              data-testid="reconcile-sync-review-note"
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                flexWrap: 'wrap',
+                gap: 8,
+                backgroundColor: theme.warningBackground,
+                borderRadius: 6,
+                padding: 10,
+                marginBottom: 10,
+              }}
+            >
+              <Text style={{ color: theme.warningText }}>
+                {t(
+                  'This account has {{count}} unresolved bank sync item(s). Resolve sync uncertainty before comparing balances.',
+                  { count: pendingReviewCount },
+                )}
+              </Text>
+              <Button
+                variant="bare"
+                onPress={() =>
+                  dispatch(
+                    pushModal({
+                      modal: {
+                        name: 'bank-sync-review',
+                        options: { accountId },
+                      },
+                    }),
+                  )
+                }
+              >
+                <Trans>Review</Trans>
+              </Button>
+            </View>
+          )}
           <View>
             <FieldLabel
               title={t(
