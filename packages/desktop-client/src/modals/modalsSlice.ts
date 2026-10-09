@@ -376,6 +376,12 @@ export type Modal =
       };
     }
   | {
+      name: 'bank-sync-review';
+      options: {
+        accountId?: AccountEntity['id'];
+      };
+    }
+  | {
       name: 'category-menu';
       options: {
         categoryId: CategoryEntity['id'];

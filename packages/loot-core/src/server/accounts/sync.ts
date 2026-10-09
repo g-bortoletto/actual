@@ -36,6 +36,7 @@ import type {
 } from '#types/models';
 
 import { getStartingBalancePayee } from './payees';
+import { reviewPluggySync } from './pluggy-sync-review';
 import { title } from './title';
 
 function BankSyncError(type: string, code: string, details?: object) {
@@ -1094,7 +1095,7 @@ export async function addTransactions(
   return newTransactions;
 }
 
-async function processBankSyncDownload(
+export async function processBankSyncDownload(
   download,
   id,
   acctRow,
@@ -1125,8 +1126,27 @@ async function processBankSyncDownload(
     startingBalance: currentBalance,
   } = download;
 
+  // Pluggy card credits can arrive as several representations of one payment.
+  // Every row is staged as an observation first, and ambiguous groups are held
+  // out of the ledger — and out of the balance math below — until the user
+  // resolves them (see PLUGGY_SYNC_DESIGN.md).
+  let syncTransactions = originalTransactions;
+  if (acctRow.account_sync_source === 'pluggyai') {
+    const review = await reviewPluggySync(id, originalTransactions);
+    if (
+      review.heldTransactionIds.size > 0 ||
+      review.suppressedTransactionIds.size > 0
+    ) {
+      syncTransactions = originalTransactions.filter(
+        trans =>
+          !review.heldTransactionIds.has(trans.transactionId) &&
+          !review.suppressedTransactionIds.has(trans.transactionId),
+      );
+    }
+  }
+
   if (initialSync) {
-    const { transactions } = download;
+    const transactions = syncTransactions;
     let balanceToUse = currentBalance;
 
     // Use custom starting balance if provided, otherwise calculate it
@@ -1206,7 +1226,7 @@ async function processBankSyncDownload(
     });
   }
 
-  const transactions = originalTransactions.map(trans => ({
+  const transactions = syncTransactions.map(trans => ({
     ...trans,
     account: id,
   }));

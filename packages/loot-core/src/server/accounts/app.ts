@@ -42,7 +42,15 @@ import type {
 
 import * as link from './link';
 import { getStartingBalancePayee } from './payees';
+import { applyReviewDecision } from './review-materialize';
 import * as bankSync from './sync';
+import {
+  getAccountUncertainty,
+  getReviewItem,
+  recordDecision,
+  updateReviewItemState,
+} from './sync-observations';
+import type { DecisionAction, ReviewItemState } from './sync-observations';
 
 // Shared base type for link account parameters
 type LinkAccountBaseParams = {
@@ -87,6 +95,8 @@ export type AccountHandlers = {
   'gocardless-get-banks': typeof getGoCardlessBanks;
   'gocardless-create-web-token': typeof createGoCardlessWebToken;
   'accounts-bank-sync': typeof accountsBankSync;
+  'bank-sync-review-decide': typeof bankSyncReviewDecide;
+  'bank-sync-review-apply': typeof bankSyncReviewApply;
   'simplefin-batch-sync': typeof simpleFinBatchSync;
   'transactions-import': typeof importTransactions;
   'account-unlink': typeof unlinkAccount;
@@ -1443,7 +1453,61 @@ function persistBankSyncError(
 
 export type SyncResponseWithErrors = SyncResponse & {
   errors: SyncError[];
+  /**
+   * Held observations that still need a user decision before they can reach
+   * the ledger. Non-zero means the account balance is knowingly incomplete.
+   */
+  reviewPendingCount?: number;
 };
+
+const REVIEW_STATE_BY_ACTION: Record<DecisionAction, ReviewItemState> = {
+  'confirm-single-payment': 'confirmed-single-payment',
+  'confirm-separate-payments': 'confirmed-separate-payments',
+  'leave-unresolved': 'left-unresolved',
+};
+
+/**
+ * Records what the user decided about held observations. This is a journal
+ * entry: it never changes the ledger, and the decision stays unapplied until
+ * the materialization step applies it (see PLUGGY_SYNC_DESIGN.md).
+ */
+async function bankSyncReviewDecide({
+  reviewItemId,
+  action,
+}: {
+  reviewItemId: string;
+  action: DecisionAction;
+}) {
+  if (!(action in REVIEW_STATE_BY_ACTION)) {
+    throw new Error(`Unknown review action: ${action}`);
+  }
+
+  const item = await getReviewItem(reviewItemId);
+  if (!item) {
+    throw new Error('Review item not found');
+  }
+  if (item.state === 'applied') {
+    throw new Error('This review item has already been applied');
+  }
+
+  const decisionId = await recordDecision(
+    reviewItemId,
+    action,
+    item.observationIds,
+  );
+  await updateReviewItemState(reviewItemId, REVIEW_STATE_BY_ACTION[action]);
+
+  return { decisionId, state: REVIEW_STATE_BY_ACTION[action] };
+}
+
+/**
+ * Applies a recorded decision to the ledger (see `review-materialize.ts`).
+ * Separate from recording so a decision survives an apply failure as
+ * "recorded; not yet applied", and so retries are safe.
+ */
+async function bankSyncReviewApply({ reviewItemId }: { reviewItemId: string }) {
+  return applyReviewDecision(reviewItemId);
+}
 
 async function accountsBankSync({
   ids = [],
@@ -1470,6 +1534,7 @@ async function accountsBankSync({
   const newTransactions: Array<TransactionEntity['id']> = [];
   const matchedTransactions: Array<TransactionEntity['id']> = [];
   const updatedAccounts: Array<AccountEntity['id']> = [];
+  let reviewPendingCount = 0;
   const fileId = getPrefs()?.cloudFileId;
 
   for (const acct of accounts) {
@@ -1495,6 +1560,9 @@ async function accountsBankSync({
         newTransactions.push(...syncResponseData.newTransactions);
         matchedTransactions.push(...syncResponseData.matchedTransactions);
         updatedAccounts.push(...syncResponseData.updatedAccounts);
+
+        const uncertainty = await getAccountUncertainty(acct.id);
+        reviewPendingCount += uncertainty.pendingCount;
       } catch (err) {
         const error = err as Error;
         await persistBankSyncError(acct.id, error);
@@ -1516,7 +1584,13 @@ async function accountsBankSync({
     });
   }
 
-  return { errors, newTransactions, matchedTransactions, updatedAccounts };
+  return {
+    errors,
+    newTransactions,
+    matchedTransactions,
+    updatedAccounts,
+    reviewPendingCount,
+  };
 }
 
 async function simpleFinBatchSync({
@@ -1816,6 +1890,8 @@ app.method('akahu-accounts', akahuAccounts);
 app.method('gocardless-get-banks', getGoCardlessBanks);
 app.method('gocardless-create-web-token', createGoCardlessWebToken);
 app.method('accounts-bank-sync', accountsBankSync);
+app.method('bank-sync-review-decide', bankSyncReviewDecide);
+app.method('bank-sync-review-apply', mutator(bankSyncReviewApply));
 app.method('simplefin-batch-sync', simpleFinBatchSync);
 app.method('transactions-import', mutator(undoable(importTransactions)));
 app.method('account-unlink', mutator(unlinkAccount));

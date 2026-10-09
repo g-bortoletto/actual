@@ -36,6 +36,7 @@
     "#components/forms": "./src/components/forms/index.tsx",
     "#components/banksync": "./src/components/banksync/index.tsx",
     "#components/banksync/bankSyncUtils": "./src/components/banksync/bankSyncUtils.ts",
+    "#components/banksync/reviewUtils": "./src/components/banksync/reviewUtils.ts",
     "#components/banksync/BuiltInProviders": "./src/components/banksync/BuiltInProviders.tsx",
     "#components/banksync/useBuiltInBankSyncProviders": "./src/components/banksync/useBuiltInBankSyncProviders.ts",
     "#components/banksync/useBankSyncAccountSettings": "./src/components/banksync/useBankSyncAccountSettings.ts",

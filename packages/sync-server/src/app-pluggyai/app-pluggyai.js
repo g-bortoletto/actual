@@ -193,51 +193,16 @@ app.post(
       const pending = [];
 
       for (const trans of Object.values(transactions)) {
-        if (typeof trans !== 'object' || Object.keys(trans).length === 0) {
+        const finalTrans = preparePluggyTransaction(trans, {
+          accountType: account.type,
+          startDate,
+        });
+
+        if (finalTrans === null) {
           continue;
         }
 
-        const newTrans = {};
-
-        newTrans.booked = !(trans.status === 'PENDING');
-
-        const transactionDate = trans.date;
-
-        if (transactionDate < startDate && !trans.sandbox) {
-          continue;
-        }
-
-        newTrans.date = getDate(transactionDate);
-        newTrans.payeeName = getPayeeName(trans);
-        newTrans.notes = trans.descriptionRaw || trans.description;
-
-        if (account.type === 'CREDIT') {
-          if (trans.amountInAccountCurrency) {
-            trans.amountInAccountCurrency *= -1;
-          }
-
-          trans.amount *= -1;
-        }
-
-        let amountInCurrency = trans.amountInAccountCurrency ?? trans.amount;
-        amountInCurrency = Math.round(amountInCurrency * 100) / 100;
-
-        newTrans.transactionAmount = {
-          amount: amountInCurrency,
-          currency: trans.currencyCode,
-        };
-
-        newTrans.transactionId = trans.id;
-        newTrans.sortOrder = transactionDate.getTime();
-
-        newTrans.originalDate = getDate(transactionDate);
-        newTrans.date = getDate(getTransactionDateCorrected(trans));
-
-        delete trans.amount;
-
-        const finalTrans = { ...flattenObject(trans), ...newTrans };
-
-        if (newTrans.booked) {
+        if (finalTrans.booked) {
           booked.push(finalTrans);
         } else {
           pending.push(finalTrans);
@@ -289,7 +254,11 @@ function flattenObject(obj, prefix = '') {
       continue;
     }
 
-    if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
+    if (value instanceof Date) {
+      // Date values (purchaseDate, createdAt, ...) would otherwise vanish:
+      // Object.entries(new Date()) is empty, so the recursion below drops them.
+      result[newKey] = getDate(value);
+    } else if (typeof value === 'object' && !Array.isArray(value)) {
       Object.assign(result, flattenObject(value, newKey));
     } else {
       result[newKey] = value;
@@ -319,26 +288,60 @@ function getPayeeName(trans) {
   return '';
 }
 
-//useful to avoid add month to day 31, which would result in day 01 skipping to the next month
-function addMonthsClamped(date, months) {
-  const result = new Date(date);
-  const day = result.getUTCDate();
-  result.setUTCDate(1);
-  result.setUTCMonth(result.getUTCMonth() + months);
-  const lastDay = new Date(
-    Date.UTC(result.getUTCFullYear(), result.getUTCMonth() + 1, 0),
-  ).getUTCDate();
-  result.setUTCDate(Math.min(day, lastDay));
-  return result;
-}
-
-function getTransactionDateCorrected(trans) {
-  if (trans.creditCardMetadata?.installmentNumber != null) {
-    return addMonthsClamped(
-      trans.creditCardMetadata.purchaseDate || trans.date,
-      trans.creditCardMetadata.installmentNumber - 1,
-    );
+/**
+ * Maps one Pluggy transaction into the shape Actual's bank sync expects.
+ *
+ * `date` is the provider's posting date, kept as-is for every row, including
+ * card installments. Do not recompute it from
+ * `creditCardMetadata.purchaseDate` + `installmentNumber`: the provider already
+ * reports when each installment posted, and `purchaseDate` is sometimes
+ * inconsistent with the installment series, which shifted real dates by whole
+ * months. Purchase date and the rest of the credit-card metadata stay in the
+ * payload as evidence.
+ *
+ * Returns null for empty rows and for rows older than `startDate` (sandbox rows
+ * ignore the cutoff).
+ */
+export function preparePluggyTransaction(trans, { accountType, startDate }) {
+  if (typeof trans !== 'object' || Object.keys(trans).length === 0) {
+    return null;
   }
 
-  return trans.date;
+  const newTrans = {};
+
+  newTrans.booked = !(trans.status === 'PENDING');
+
+  const transactionDate = trans.date;
+
+  if (transactionDate < startDate && !trans.sandbox) {
+    return null;
+  }
+
+  newTrans.date = getDate(transactionDate);
+  newTrans.payeeName = getPayeeName(trans);
+  newTrans.notes = trans.descriptionRaw || trans.description;
+
+  if (accountType === 'CREDIT') {
+    if (trans.amountInAccountCurrency) {
+      trans.amountInAccountCurrency *= -1;
+    }
+
+    trans.amount *= -1;
+  }
+
+  let amountInCurrency = trans.amountInAccountCurrency ?? trans.amount;
+  amountInCurrency = Math.round(amountInCurrency * 100) / 100;
+
+  newTrans.transactionAmount = {
+    amount: amountInCurrency,
+    currency: trans.currencyCode,
+  };
+
+  newTrans.transactionId = trans.id;
+  newTrans.sortOrder = transactionDate.getTime();
+  newTrans.originalDate = getDate(transactionDate);
+
+  delete trans.amount;
+
+  return { ...flattenObject(trans), ...newTrans };
 }

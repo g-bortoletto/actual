@@ -30,7 +30,10 @@ const INIT_SQL = path.resolve(__dirname, '../sql/init.sql');
 // Internal (non-CRDT-synced) tables, exempt from the synced-table rules
 // at creation only (see `findAdditiveViolations`). Add new internal
 // tables here.
-const NON_SYNCED_TABLES = new Set(['messages_pending']);
+const NON_SYNCED_TABLES = new Set([
+  'messages_pending',
+  'bank_sync_observations',
+]);
 
 async function openTestDb(setupSql: string): Promise<Database> {
   await sqlite.init();
